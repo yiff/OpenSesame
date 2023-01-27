@@ -1,6 +1,3 @@
-## work on persistence of values and make the controller setup window more friendly ##
-## ip address saves and shows but everything else saves, but doesn't show ##
-
 import ipaddress
 import gooeypie as gp
 from configparser import ConfigParser
@@ -8,6 +5,7 @@ import os
 from os.path import exists
 import requests
 import ctypes
+import webbrowser
 
 if not os.path.exists(os.path.join(os.environ['APPDATA'], 'OpenSesame')):
     os.mkdir(os.path.join(os.environ['APPDATA'], 'OpenSesame'))
@@ -22,13 +20,13 @@ if not exists(CONFIG_FILE):
 
 # set default values for all global variables until we check config
 global controllerIPaddr
-controllerIPaddr = ''
+controllerIPaddr = '127.0.0.1'
 global controllerUser
-controllerUser = ''
+controllerUser = 'admin'
 global controllerPasswd
-controllerPasswd = ''
+controllerPasswd = 'admin'
 global controllerDuration
-controllerDuration = ''
+controllerDuration = '10'
 
 global doors
 doors = 0
@@ -75,6 +73,9 @@ door9ID = ''
 
 global doorsList
 doorsList = []
+
+global console_togSwitch
+console_togSwitch = False
 
 config = ConfigParser() # defining configparser to config so we can shorthand it for the rest of the script
 
@@ -151,14 +152,14 @@ def read_config(): # read config and reassign values to variables
     config.read(CONFIG_FILE)
     
     for i in range(1,24): # this whole for loop is wizardry, idk how i did it but i did it
-        if not config.has_option('DOORS', 'DOOR{dID}'.format(dID=i)): # if there isn't a value in any of the 1-9
+        if not config.has_option('DOORS', 'DOOR{dID}'.format(dID=i)): # if there isn't a value in any of the 1-24
             ni = i # check next entry for values
             while not config.has_option('DOORS', 'DOOR{dID}'.format(dID=i)): # while there's not a value for our empty entry
-                ni = ni+1 # if there isn't one, keep checking down the last until u find one or max out door amt aka 8 atm
+                ni = ni+1 # if there isn't one, keep checking down the last until u find one or max out door amt aka 9 atm
                 #print("i = "+str(i))
                 #print("ni = "+str(ni))
                 
-                if(config.has_option('DOORS', 'DOOR{ndID}'.format(ndID=ni))): # IF we find an entry past the empty entry, 
+                if(config.has_option('DOORS', 'DOOR{ndID}'.format(ndID=ni))): # IF we find a door entry past the empty entry, take that entry and make it the current empty one and then delete it.
                     rawDvalue = config.get('DOORS', 'DOOR{dID}'.format(dID=ni))
                     save_config('DOORS', 'DOOR{dID}'.format(dID=i), rawDvalue)
                     rem_config('DOORS', 'DOOR{dID}'.format(dID=ni))
@@ -172,7 +173,7 @@ def read_config(): # read config and reassign values to variables
         if validIPcheck(savedIP) == True:
             controllerIPaddr = savedIP
     else:
-        controllerIPaddr = 'No saved IP address in config file.'
+        controllerIPaddr = '127.0.0.1'
     
     print('controllerIPaddr is:{cntrip}'.format(cntrip=controllerIPaddr))
 
@@ -180,16 +181,24 @@ def read_config(): # read config and reassign values to variables
         cntlrUser = config.get('CONTROLLER', 'cntlrUser')
         controllerUser = str(cntlrUser)
         print('controllerUser is:{cntrusr}'.format(cntrusr=controllerUser))
+    
+    else:
+        controllerUser = 'admin'
 
     if config.has_option('CONTROLLER', 'cntlrPasswd'):
         cntlrPasswd = config.get('CONTROLLER', 'cntlrPasswd')
         controllerPasswd = str(cntlrPasswd)
         print('controllerPasswd is:{cntrpwd}'.format(cntrpwd=controllerPasswd))
     
+    else:
+        controllerPasswd = 'admin'
+    
     if config.has_option('CONTROLLER', 'cntlrDuration'):
         cntlrDuration = config.get('CONTROLLER', 'cntlrDuration')
         controllerDuration = str(cntlrDuration)
         print('controllerDuration is:{cntrdur}'.format(cntrdur=controllerDuration))
+    else:
+        controllerDuration = '10'
 
     if config.has_option('DOORS', 'amount'):
         savedDoorAmount = config.get('DOORS', 'amount')
@@ -463,6 +472,29 @@ def updateGUI():
     os.startfile(sys.executable)
     sys.exit()
 
+def open_config_frmMenu(event):
+    webbrowser.open(CONFIG_FILE)
+
+def open_config_folder(event):
+    os.startfile(CONFIG_FILE_PATH)
+
+def reset_config(event):
+    if(app.confirm_okcancel('Reset Config', 'Are you sure you\'d like to reset your config?\n\nThis will remove ALL your doors and your Infinias Access Control server information.', 'warning') == True):
+        if os.path.exists(CONFIG_FILE):
+            os.remove(CONFIG_FILE)
+            updateGUI()
+        else:
+            app.alert('Config File Doesn\'t Exist', 'Config File can not be reset as it does not exist.\nCheck \'AppData\Roaming\OpenSesame\' again for a configuration file.', 'error')
+
+def tog_console_frmMenu(event):
+    global console_togSwitch
+    console_togSwitch = not console_togSwitch
+    
+    if(console_togSwitch):
+        raise_console(True)
+    else:
+        raise_console(False)
+
 # main app starting time
 print('OpenSesame starting...\n')
 raise_console(False)
@@ -479,9 +511,14 @@ needSetupMessage = gp.Label(app, 'Click on \'Setup\' to define door names and th
     
 app.add_menu_item('Setup', 'Controller', open_controllerSetup)
 app.add_submenu_item('Setup', 'Doors', 'Add Door', open_addDoorsSetup)
-app.add_submenu_item('Setup', 'Doors', 'Delete Door', open_remDoorsSetup) # to be completed
+app.add_submenu_item('Setup', 'Doors', 'Delete Door', open_remDoorsSetup)
 
-# eight door buttons for now, later this will  be capped at 24
+app.add_menu_item('Advanced', 'Open Config', open_config_frmMenu)
+app.add_menu_item('Advanced', 'Open Config Folder', open_config_folder)
+app.add_menu_item('Advanced', 'Reset Config', reset_config)
+app.add_menu_item('Advanced', 'Toggle Console', tog_console_frmMenu)
+
+# nine door buttons for now, later this will  be capped at 24
 door1Button = gp.Button(app, "Open\n{door1}".format(door1=door1Name), whichDoor)
 door2Button = gp.Button(app, "Open\n{door2}".format(door2=door2Name), whichDoor)
 door3Button = gp.Button(app, "Open\n{door3}".format(door3=door3Name), whichDoor)
