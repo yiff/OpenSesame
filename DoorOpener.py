@@ -6,6 +6,7 @@ from os.path import exists
 import requests
 import ctypes
 import webbrowser
+import re
 
 if not os.path.exists(os.path.join(os.environ['APPDATA'], 'OpenSesame')):
     os.mkdir(os.path.join(os.environ['APPDATA'], 'OpenSesame'))
@@ -74,12 +75,21 @@ door9ID = ''
 global doorsList
 doorsList = []
 
+global scanDoorsList
+scanDoorsList = []
+global scanDoorsListraw
+scanDoorsListraw = []
+global doorScanner_listbox
+
 global console_togSwitch
 console_togSwitch = False
 
 config = ConfigParser() # defining configparser to config so we can shorthand it for the rest of the script
 
 def raise_console(console_toggle):
+    # uncomment this line and comment every other line when u need to debug in python console
+    #return
+
     ## props to tgikal on stackoverflow 4 dis 1 ##
     if console_toggle:
         # open console for bugs, errors output
@@ -347,6 +357,7 @@ def openDoor():
         'DoorIds': opnDoorID
         }
         
+        print("")
         print(payload)
         
         r = requests.put(reqControllerIP, payload)
@@ -354,12 +365,76 @@ def openDoor():
         
         print(r)
         print(r.content)
-    except requests.exceptions.HTTPError as err:
+    except (requests.exceptions.HTTPError,requests.exceptions.ConnectionError) as err:
+        print("")
         print(err)
         app.alert('RESTful API Request Error', 'Pleae review the request in the console output and make sure the credentials and IP address are correct.', 'error')
         print("\nThere was an error in opening your door!\nPleae review the request and make sure the credentials and IP address are correct.")
+        print("The most likely cause of this error is incorrect username, password, or controller IP address.\nOpen \'Setup > Controller\' and review your settings.\nYou may also not be able to speak with the controller currently.\nTry to ping the IP address of your controller in Command Prompt or contact IT support.\n")
         raise_console(True)
+
+def open_doorScanner(event):
+    doorScanner.show_on_top()
+
+def doorScannerScan(event):
+    global scanDoorsListraw
+    global scanDoorsList
     
+    try:
+        reqControllerIP = 'http://' + controllerIPaddr + ':18779/infinias/ia/Doors/Names/Values'
+        
+        payload = {
+        'Username': controllerUser,
+        'Password': controllerPasswd,
+        'Start':'0',
+        'Pagesize':'100'
+        }
+        
+        print("")
+        print(payload)
+        
+        r = requests.get(reqControllerIP, payload)
+        
+        r.raise_for_status()
+
+        rContent = r.content.decode()
+        regex = re.compile("{\"FriendlyValue\":\"(.*?)\",\"ActualValue\":\"(.*?)\"}")
+        scanDoorsListraw = re.findall(regex, rContent)
+
+        print(scanDoorsListraw, type(scanDoorsListraw))
+        
+        doorScanner_listbox.items = scanDoorsListraw
+    
+    except (requests.exceptions.HTTPError,requests.exceptions.ConnectionError) as err:
+        print("")
+        print(err)
+        app.alert('RESTful API Request Error', 'Pleae review the request in the console output and make sure the credentials and IP address are correct.', 'error')
+        print("\nThere was an error in scanning your controller!\nPleae review the request and make sure the credentials and IP address are correct.")
+        print("The most likely cause of this error is incorrect username, password, or controller IP address.\nOpen \'Setup > Controller\' and review your settings.\nYou may also not be able to speak with the controller currently.\nTry to ping the IP address of your controller in Command Prompt or contact IT support.\n")
+        raise_console(True)
+
+def doorScannerAdd(event):
+    global doors
+    global scanDoorsListraw
+    
+    for i in doorScanner_listbox.selected_index:
+        print(i, type(i))
+        doorTuple = scanDoorsListraw[i]
+
+        (doorName, doorID) = doorTuple
+        
+        print(doorName)
+        print(doorID)
+        
+        if doorID.isnumeric():
+            doors += 1
+            print("doors has been added by one. doors is now equal to: {dor}".format(dor=doors))
+            save_config('DOORS', 'amount', '{rDOORNUM}'.format(rDOORNUM=doors)) # save how many doors we have
+            save_config('DOORS', 'DOOR{doorNum}'.format(doorNum=doors), '{DOORNAME},{rDOORID}'.format(DOORNAME=doorName, rDOORID=doorID)) # save the actual door name and id as an array in the config
+        else:
+            app.alert('Invalid Door ID', 'One or more of your selected doors had an invalid ID and was not added.', 'error')
+    app.alert('Doors Added', 'Your doors have been added.', 'info')
+    updateGUI()
 
 def open_controllerSetup(event):
     controllerSetup.show_on_top()
@@ -441,23 +516,26 @@ def addDoorsSetupSave(event):
 
 def remDoorsSetupSave(event):
     global doors
-    doors = doors-1
-    print('\ndoors has been subtracted by one. doors is now equal to: {rDoorsw}'.format(rDoorsw=doors))
-    save_config('DOORS', 'amount', '{rDOORNUM}'.format(rDOORNUM=doors)) # save how many doors we have
-    
     global doorsList
     
-    rmDoorName = remDoorsSetup_listbox.remove_selected()
-    rmDoorIDraw = doorsList.index(rmDoorName)
-    rmDoorID = rmDoorIDraw+1 # get position in list of this door name, plus 1 to it since we're starting at 1 instead of 0 on our doors, whereas lists start at 0 traditionally
-    
-    print(rmDoorName, type(rmDoorName))
-    print(rmDoorID, type(rmDoorID))
-    print('door{rmID}'.format(rmID=rmDoorID))
-    
-    rem_config('DOORS', 'DOOR{rmID}'.format(rmID=rmDoorID))
-    doorsList.remove(rmDoorName) # remove it from the actual list as well
-    
+    for i in remDoorsSetup_listbox.selected:
+        print("")
+        print(i, type(i))
+        
+        doors -= 1
+        print('doors has been subtracted by one. doors is now equal to: {rDoorsw}'.format(rDoorsw=doors))
+        save_config('DOORS', 'amount', '{rDOORNUM}'.format(rDOORNUM=doors)) # save how many doors we have
+        
+        rmDoorName = i
+        rmDoorIDraw = doorsList.index(rmDoorName)
+        rmDoorID = rmDoorIDraw + 1
+        
+        print(rmDoorName, type(rmDoorName))
+        print(rmDoorID, type(rmDoorID))
+        print('door{rmID}'.format(rmID=rmDoorID))
+        
+        rem_config('DOORS', 'DOOR{rmID}'.format(rmID=rmDoorID))
+    app.alert('Doors Removed', 'The selected doors have been removed.', 'info')
     remDoorsSetup_listbox.select_none()
     updateGUI()
 
@@ -512,6 +590,7 @@ needSetupMessage = gp.Label(app, 'Click on \'Setup\' to define door names and th
 app.add_menu_item('Setup', 'Controller', open_controllerSetup)
 app.add_submenu_item('Setup', 'Doors', 'Add Door', open_addDoorsSetup)
 app.add_submenu_item('Setup', 'Doors', 'Delete Door', open_remDoorsSetup)
+app.add_submenu_item('Setup', 'Doors', 'Scan for Doors', open_doorScanner)
 
 app.add_menu_item('Advanced', 'Open Config', open_config_frmMenu)
 app.add_menu_item('Advanced', 'Open Config Folder', open_config_folder)
@@ -691,8 +770,26 @@ remDoorsSetup_listbox = gp.Listbox(remDoorsSetup, doorsList)
 remDoorsSetupSave_btn = gp.Button(remDoorsSetup, 'Save', remDoorsSetupSave)
 
 remDoorsSetup.add(remDoorsSetup_lbl, 1, 1)
-remDoorsSetup.add(remDoorsSetup_listbox, 1, 2, mulitple_selection=True, stretch=True, fill=True)
+remDoorsSetup.add(remDoorsSetup_listbox, 1, 2, stretch=True, fill=True)
+remDoorsSetup_listbox.multiple_selection = True
 remDoorsSetup.add(remDoorsSetupSave_btn, 2, 3)
+
+# door scanning window
+doorScanner = gp.Window(app, 'Door Scanner')
+doorScanner.width = 256
+doorScanner.height = 256
+doorScanner.set_grid(2,3)
+
+doorScanner_lbl = gp.Label(doorScanner, "Which doors would you like to add?")
+doorScanner_listbox = gp.Listbox(doorScanner, scanDoorsList)
+doorScanner_scanbtn = gp.Button(doorScanner, 'Scan', doorScannerScan)
+doorScanner_addbtn = gp.Button(doorScanner, 'Add', doorScannerAdd)
+
+doorScanner.add(doorScanner_lbl, 2, 1)
+doorScanner.add(doorScanner_listbox, 2, 2, stretch=True, fill=True)
+doorScanner_listbox.multiple_selection = True
+doorScanner.add(doorScanner_scanbtn, 1, 3)
+doorScanner.add(doorScanner_addbtn, 2, 3)
 
 # run the GUI
 try:
